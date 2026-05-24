@@ -61,7 +61,7 @@ def _plot_es_file(pkl_path: str):
         )
 
 _GREEDY_METRICS = [
-    ("nshd", "nSHD", r"normalized SHD"),
+    ("nshd", "nSHD", r"average nSHD"),
     ("fnr",  "FNR",  r"False Negative Rate"),
     ("fpr",  "FPR",  r"False Positive Rate"),
 ]
