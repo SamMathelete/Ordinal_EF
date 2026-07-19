@@ -32,8 +32,8 @@ Both directories are gitignored. Since `plot_all.py` reads only the pickles,
 figures can be restyled without recomputing anything.
 
 Set `N_WORKERS` in `config.py` to your core count before launching. On 8 workers
-the three-node experiment takes roughly 6 hours; the `d = 20` experiment is
-considerably cheaper.
+the three-node experiment takes roughly 6 hours; the `d = 20` experiment takes
+roughly 13 hours, most of it in the dense regime.
 
 ## What each experiment does
 
@@ -93,10 +93,11 @@ Key settings, all in `config.py` unless noted:
 
 `W_EDGE = 0.6` was chosen empirically. At 1.0 the exponential-family node
 reaches values large enough to pin the downstream ordinal node in its top
-category for several families, which makes that edge nearly uninformative; at
-0.6 all seven families recover the correct orientation in every trial at
-N = 500. Any nonzero weight is consistent with the theory, which requires only
-`w ≠ 0`.
+category for several families, which makes that edge nearly uninformative. At
+0.6 the error falls by at least an order of magnitude across the sample range
+in every family and every ground-truth structure, though it is not exhausted
+in every case by N = 500. Any nonzero weight is consistent with the theory,
+which requires only `w ≠ 0`.
 
 `PLOT_LOG_FLOOR` sits below `0.5 / B = 5e-5`, the smallest nonzero mean ρ
 attainable in the three-node experiment, so a single misoriented trial stays

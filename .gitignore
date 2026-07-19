@@ -1,6 +1,3 @@
-# Experiment artifacts
-state/
-plots/
 
 # Python
 __pycache__/
@@ -9,6 +6,11 @@ __pycache__/
 .venv/
 venv/
 env/
+
+summary_gen_es.py
+summary_gen_greedy.py
+three_node_summary.csv
+greedy_summary.csv
 
 # Notebooks
 .ipynb_checkpoints/
