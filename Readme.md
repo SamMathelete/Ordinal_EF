@@ -20,14 +20,16 @@ matplotlib
 ## Running
 
 ```bash
-python run_all.py                 # everything
-python run_all.py --skip-greedy   # three-node experiment and plots only
-python run_all.py --plots-only    # redraw figures from cached pickles
+python run_es.py       # three-node experiment
+python run_greedy.py   # d = 20 experiment
+python plot_all.py     # figures, from whatever pickles are present
 ```
 
-Results are cached as pickles in `state/` and figures written to `plots/` as
-matched `.png` and `.pdf`. Both directories are gitignored. `--plots-only`
-reads the pickles, so figures can be restyled without recomputing anything.
+The two experiments are independent and can be run in either order, or singly;
+`plot_all.py` draws whatever it finds in `state/`. Results are cached as
+pickles there and figures written to `plots/` as matched `.png` and `.pdf`.
+Both directories are gitignored. Since `plot_all.py` reads only the pickles,
+figures can be restyled without recomputing anything.
 
 Set `N_WORKERS` in `config.py` to your core count before launching. On 8 workers
 the three-node experiment takes roughly 6 hours; the `d = 20` experiment is
@@ -69,7 +71,6 @@ distance normalised by the edge count.
 | `run_es.py` | Three-node experiment driver |
 | `run_greedy.py` | `d = 20` experiment driver |
 | `plotting.py`, `plot_all.py` | Figure generation |
-| `run_all.py` | Entry point |
 
 ## Configuration
 
