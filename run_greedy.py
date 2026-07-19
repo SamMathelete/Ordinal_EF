@@ -6,12 +6,12 @@ from config import (
     SEED, N_WORKERS, STATE_DIR, ALL_EXPFAM_DISTS, DIST_HYPERPARAMS, DIST_MODES,
 )
 from utils import (
-    assign_node_types, generate_bipartite_dag, bipartite_mask,
+    assign_node_types, generate_bipartite_dag, random_orientation,
     generate_ordinal_cutpoints, make_trial_seed, make_trial_rng, run_trials,
-    shd, nshd, fnr, fpr,
+    orientation_error,
 )
 from data_gen import generate_data
-from greedy_dag_search import estimate_dag_greedy
+from greedy_dag_search import orient_dag_greedy
 
 d = 20
 B = 1000
@@ -22,7 +22,6 @@ EDGE_PROBS = {"ER-2": 0.1, "ER-4": 0.9}
 
 GREEDY_KW = dict(
     score_tol=1e-6,
-    max_outer_passes=10,
     fit_max_iter=200,
     fit_ftol=1e-8,
 )
@@ -52,7 +51,8 @@ def _build_weighted_dag(edge_prob: float):
     magnitudes = rng.uniform(0.5, 1.0, size=(d, d))
     signs = np.where(rng.random((d, d)) < 0.5, -1.0, 1.0)
     W_true = A_bin * magnitudes * signs
-    return W_true, A_bin, ord_nodes, expfam_nodes, int(A_bin.sum())
+    skeleton = ((A_bin + A_bin.T) != 0).astype(np.float64)
+    return W_true, A_bin, skeleton, ord_nodes, expfam_nodes, int(A_bin.sum())
 
 def _build_mode_info(ord_nodes, expfam_nodes, mode, density):
     rng = make_trial_rng(SEED, density, mode)
@@ -62,15 +62,12 @@ def _build_mode_info(ord_nodes, expfam_nodes, mode, density):
               for i, info in node_info.items() if info["dist"] == "ordinal"}
     return node_info, gammas
 
-def _trial(W_true, A_bin, bp_mask, node_info, gammas, N, trial_seed, kw):
+def _trial(W_true, A_bin, skeleton, node_info, gammas, N, trial_seed, kw):
     X = generate_data(W=W_true, N=N, node_info=node_info,
                       ordinal_gammas=gammas, seed=trial_seed)
-    result = estimate_dag_greedy(X, node_info, bp_mask, **kw)
-    return {
-        "nshd": nshd(result.W, A_bin),
-        "fnr":  fnr(result.W, A_bin),
-        "fpr":  fpr(result.W, A_bin),
-    }
+    rng = np.random.default_rng(trial_seed)
+    result = orient_dag_greedy(X, node_info, skeleton, rng=rng, **kw)
+    return {"orient_err": orientation_error(result.W, A_bin)}
 
 def main():
     print(f"CPU workers: {N_WORKERS}")
@@ -78,16 +75,15 @@ def main():
     print(f"Modes: {list(DIST_MODES)}")
     dags = {}
     for density, edge_prob in EDGE_PROBS.items():
-        W_true, A_bin, ord_nodes, expfam_nodes, n_edges = _build_weighted_dag(edge_prob)
-        bp = bipartite_mask(d, ord_nodes, expfam_nodes)
-        dags[density] = dict(W_true=W_true, A_bin=A_bin, bp_mask=bp,
+        W_true, A_bin, skeleton, ord_nodes, expfam_nodes, n_edges = _build_weighted_dag(edge_prob)
+        dags[density] = dict(W_true=W_true, A_bin=A_bin, skeleton=skeleton,
                              ord_nodes=ord_nodes, expfam_nodes=expfam_nodes,
                              n_edges=n_edges)
         print(f"  {density}: edges = {n_edges}")
     def _empty():
         return {density: {mode: {n: [] for n in N_VALUES} for mode in DIST_MODES}
                 for density in EDGE_PROBS}
-    results = {"nshd": _empty(), "fnr": _empty(), "fpr": _empty()}
+    results = {"orient_err": _empty()}
     total = len(EDGE_PROBS) * len(DIST_MODES) * len(N_VALUES) * B
     done = 0
     t0 = time.time()
@@ -98,7 +94,7 @@ def main():
             )
             for N in N_VALUES:
                 seed_base = make_trial_seed(SEED, density, mode, N, "data")
-                args = [(info["W_true"], info["A_bin"], info["bp_mask"],
+                args = [(info["W_true"], info["A_bin"], info["skeleton"],
                          node_info, gammas, N, seed_base + b, GREEDY_KW)
                         for b in range(B)]
                 trial_out = run_trials(_trial, args, N_WORKERS)
@@ -108,9 +104,7 @@ def main():
                 elapsed = time.time() - t0
                 print(f"  [{done:>5d}/{total}]  {density:>5s}  "
                       f"{DIST_MODES[mode]['label']:>20s}  N={N:>4d}  "
-                      f"nSHD={np.mean(results['nshd'][density][mode][N]):.3f}  "
-                      f"FNR={np.mean(results['fnr'][density][mode][N]):.3f}  "
-                      f"FPR={np.mean(results['fpr'][density][mode][N]):.3f}  "
+                      f"rho={np.mean(results['orient_err'][density][mode][N]):.4f}  "
                       f"[{elapsed:.0f}s]")
     os.makedirs(STATE_DIR, exist_ok=True)
     pkl_path = os.path.join(STATE_DIR, "greedy_results.pkl")

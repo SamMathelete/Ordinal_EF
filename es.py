@@ -2,6 +2,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from score import local_score
+from utils import enumerate_orientations
 
 
 @dataclass(frozen=True)
@@ -38,18 +39,19 @@ def score_candidate(
 def exhaustive_search(
     X: np.ndarray,
     node_info: dict,
-    candidates: dict[str, np.ndarray],
+    skeleton: np.ndarray,
     *,
     max_iter: int = 200,
     ftol: float = 1e-8,
 ) -> ESResult:
+    candidates = enumerate_orientations(skeleton)
     if not candidates:
-        raise ValueError("candidates must be non-empty")
+        raise ValueError("skeleton admits no acyclic orientation")
     per_candidate: dict[str, float] = {}
     for name, W in candidates.items():
         per_candidate[name] = score_candidate(X, node_info, W,
                                               max_iter=max_iter, ftol=ftol)
-    best_name = min(per_candidate, key=per_candidate.__getitem__)
+    best_name = min(sorted(per_candidate), key=per_candidate.__getitem__)
     best_W = (np.asarray(candidates[best_name]) != 0).astype(np.float64)
     return ESResult(
         best_name=best_name,

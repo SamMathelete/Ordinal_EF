@@ -10,8 +10,7 @@ from config import (
 from plotting import plot_curves
 
 _X_LABELS = {
-    "N":      r"number of samples ($N$)",
-    "sigma2": r"edge strength  ($\sigma^2$)",
+    "N": r"number of samples ($N$)",
 }
 
 
@@ -48,22 +47,20 @@ def _plot_es_file(pkl_path: str):
         plot_curves(
             series,
             title=f"Truth: {label_truth}",
-            xlabel=xlabel, ylabel=r"average nSHD",
+            xlabel=xlabel, ylabel=r"average orientation error ($\rho$)",
             out_basename=f"es_{key}_{truth_name}_linear",
             log_x=False, log_y=False,
         )
         plot_curves(
             series,
             title=f"Truth: {label_truth}  ",
-            xlabel=xlabel, ylabel=r"average nSHD",
+            xlabel=xlabel, ylabel=r"average orientation error ($\rho$)",
             out_basename=f"es_{key}_{truth_name}",
             log_x=False, log_y=True,
         )
 
 _GREEDY_METRICS = [
-    ("nshd", "nSHD", r"average nSHD"),
-    ("fnr",  "FNR",  r"False Negative Rate"),
-    ("fpr",  "FPR",  r"False Positive Rate"),
+    ("orient_err", "rho", r"average orientation error ($\rho$)"),
 ]
 
 _DENSITY_LABELS = {
@@ -96,7 +93,7 @@ def _plot_greedy_file(pkl_path: str):
     d = bundle.get("config", {}).get("d", "?")
 
     print(f"\n[greedy_results]")
-    for density in bundle["nshd"]:
+    for density in bundle["orient_err"]:
         n_edges = dags[density]["n_edges"]
         density_label = _DENSITY_LABELS.get(density, density)
         for key, name, ylabel in _GREEDY_METRICS:
@@ -105,7 +102,7 @@ def _plot_greedy_file(pkl_path: str):
                 title=f"{density_label} Bipartite DAG  "
                       f"($d$={d}, edges = {n_edges})",
                 xlabel=r"number of samples ($N$)", ylabel=ylabel,
-                out_basename=f"greedy_{density}_{key}",
+                out_basename=f"greedy_{density}_{name}",
                 log_x=False, legend_ncol=3,
             )
 

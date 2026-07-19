@@ -265,9 +265,15 @@ def local_score(
         raise ValueError(f"Unknown distribution '{dist}' at node {node_idx}")
 
     hyperparams = {k: v for k, v in info.items() if k != "dist"}
-    nll, w = _fit_expfam_node(dist, X, parents, x_target, hyperparams,
-                               max_iter=max_iter, ftol=ftol)
-    n_params = len(parents)
+    if len(parents) == 0:
+        X_aug = np.ones((N, 1), dtype=np.float64)
+        nll, w = _fit_expfam_node(dist, X_aug, (0,), x_target, hyperparams,
+                                  max_iter=max_iter, ftol=ftol)
+        n_params = 1
+    else:
+        nll, w = _fit_expfam_node(dist, X, parents, x_target, hyperparams,
+                                  max_iter=max_iter, ftol=ftol)
+        n_params = len(parents)
     return LocalScoreResult(
         score=N * nll + penalty * n_params,
         nll=nll, n_params=n_params, weights=w, extras={},

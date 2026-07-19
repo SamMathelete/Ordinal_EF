@@ -8,7 +8,7 @@ from config import (
     SEED, N_WORKERS, STATE_DIR, ALL_EXPFAM_DISTS, DIST_HYPERPARAMS,
 )
 from utils import (
-    generate_ordinal_cutpoints, make_trial_seed, run_trials, nshd,
+    generate_ordinal_cutpoints, make_trial_seed, run_trials, orientation_error,
 )
 from data_gen import generate_data
 from es import exhaustive_search
@@ -17,9 +17,13 @@ B = 10000
 N_VALUES = sorted(set(np.round(
     np.linspace(5, 500, 20)
 ).astype(int).tolist()))
-SIGMA2_VALUES = [0.01, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
-N_FIXED = 1000     
 S_ORD = 4          
+
+W_EDGE = 0.6
+
+SKELETON = np.array([[0., 1., 0.],
+                     [1., 0., 1.],
+                     [0., 1., 0.]])
 
 GRAPHS = {
     "G1": np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0]], dtype=float),  
@@ -45,27 +49,16 @@ def _ordinal_gammas(node_info: dict, rng_seed: int) -> dict:
     return {i: generate_ordinal_cutpoints(info["S"], rng)
             for i, info in node_info.items() if info["dist"] == "ordinal"}
 
-def _trial_binary(W_struct, node_info, gammas, candidates, N, trial_seed):
-    X = generate_data(W=W_struct, N=N, node_info=node_info,
+def _trial_binary(W_struct, node_info, gammas, skeleton, N, trial_seed):
+    X = generate_data(W=W_struct * W_EDGE, N=N, node_info=node_info,
                       ordinal_gammas=gammas, seed=trial_seed)
-    result = exhaustive_search(X, node_info, candidates)
-    return float(nshd(result.best_W, W_struct))
+    result = exhaustive_search(X, node_info, skeleton)
+    return float(orientation_error(result.best_W, W_struct))
 
 
-def _trial_edge(W_struct, node_info, gammas, candidates, N, sigma2, trial_seed):
-    rng = np.random.default_rng(trial_seed)
-    abs_bound = float(np.sqrt(3.0 * sigma2))
-    d = W_struct.shape[0]
-    W_random = rng.uniform(-abs_bound, abs_bound, size=(d, d))
-    W = W_struct * W_random
-    X = generate_data(W=W, N=N, node_info=node_info,
-                      ordinal_gammas=gammas, seed=trial_seed)
-    result = exhaustive_search(X, node_info, candidates)
-    return float(nshd(result.best_W, W_struct))
-
-def _run_sweep(x_values: list, x_key: str, experiment_key: str):
+def _run_sweep(x_values: list, experiment_key: str):
     print(f"\n=== {experiment_key} ===")
-    candidates = GRAPHS
+    skeleton = SKELETON
 
     results = {g: {d_: {x: [] for x in x_values} for d_ in ALL_EXPFAM_DISTS}
                for g in GRAPHS}
@@ -82,21 +75,14 @@ def _run_sweep(x_values: list, x_key: str, experiment_key: str):
 
             for x in x_values:
                 seed_base = make_trial_seed(SEED, experiment_key, truth_name, y_dist, x, "data")
-                if x_key == "N":
-                    args = [(W_struct, node_info, gammas, candidates, x, seed_base + b)
-                            for b in range(B)]
-                    fn = _trial_binary
-                else:  
-                    args = [(W_struct, node_info, gammas, candidates, N_FIXED, x, seed_base + b)
-                            for b in range(B)]
-                    fn = _trial_edge
-                nshd_vec = run_trials(fn, args, N_WORKERS)
-                results[truth_name][y_dist][x] = nshd_vec
+                args = [(W_struct, node_info, gammas, skeleton, x, seed_base + b)
+                        for b in range(B)]
+                rho_vec = run_trials(_trial_binary, args, N_WORKERS)
+                results[truth_name][y_dist][x] = rho_vec
 
                 elapsed = time.time() - t0
-                x_label = f"N={x:>5d}" if x_key == "N" else f"sigma^2={x:.2f}"
-                print(f"    {truth_name} {y_dist:>12s}  {x_label}  "
-                      f"nSHD={np.mean(nshd_vec):.3f}  [{elapsed:.0f}s]")
+                print(f"    {truth_name} {y_dist:>12s}  N={x:>5d}  "
+                      f"rho={np.mean(rho_vec):.4f}  [{elapsed:.0f}s]")
 
     os.makedirs(STATE_DIR, exist_ok=True)
     pkl_path = os.path.join(STATE_DIR, f"es_{experiment_key}.pkl")
@@ -105,20 +91,17 @@ def _run_sweep(x_values: list, x_key: str, experiment_key: str):
         "graphs":         {g: G.tolist() for g, G in GRAPHS.items()},
         "labels":         LABELS,
         "x_values":       x_values,
-        "x_key":          x_key,
+        "x_key":          "N",
         "experiment_key": experiment_key,
-        "config":         {"B": B, "SEED": SEED},
+        "config":         {"B": B, "SEED": SEED, "W_EDGE": W_EDGE, "S_ORD": S_ORD},
     }
-    if x_key == "sigma2":
-        bundle["config"]["N"] = N_FIXED
     with open(pkl_path, "wb") as f:
         pickle.dump(bundle, f)
     print(f"  saved: {pkl_path}")
 
 def main():
     print(f"CPU workers: {N_WORKERS},  B = {B}")
-    _run_sweep(N_VALUES,      "N",      "exp1_3node_samples")
-    _run_sweep(SIGMA2_VALUES, "sigma2", "exp2_3node_edge")
+    _run_sweep(N_VALUES, "exp1_3node_samples")
     print("\nAll exhaustive-search experiments done.")
     print(f"To generate plots: python plot_all.py")
 

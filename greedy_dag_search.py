@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from typing import Iterable
 import numpy as np
 from score import local_score, LocalScoreResult
+from utils import skeleton_edges, random_orientation
 
 def _is_acyclic(parents_of: list[set[int]]) -> bool:
     d = len(parents_of)
@@ -220,6 +221,112 @@ def estimate_dag_greedy(
         total_score=total_score,
         insert_steps=insert_steps,
         delete_steps=delete_steps,
+        reverse_steps=reverse_steps,
+        n_fits=cache.n_fits,
+        history=history,
+    )
+
+@dataclass
+class OrientResult:
+    W: np.ndarray
+    parents_of: list[set[int]]
+    total_score: float
+    reverse_steps: int
+    n_fits: int
+    history: list[dict] = field(default_factory=list)
+
+
+def orient_dag_greedy(
+    X: np.ndarray,
+    node_info: dict,
+    skeleton: np.ndarray,
+    init_parents: list[set[int]] | None = None,
+    *,
+    rng: np.random.Generator | None = None,
+    score_tol: float = 1e-6,
+    max_steps: int | None = None,
+    fit_max_iter: int = 200,
+    fit_ftol: float = 1e-8,
+) -> OrientResult:
+    if X.ndim != 2:
+        raise ValueError(f"X must have shape (N, d); got {X.shape}")
+    N, d = X.shape
+    skeleton = np.asarray(skeleton)
+    if skeleton.shape != (d, d):
+        raise ValueError(f"skeleton shape {skeleton.shape} != (d, d) = ({d}, {d})")
+    edges = skeleton_edges(skeleton)
+    if max_steps is None:
+        max_steps = 4 * len(edges) + 1
+
+    if init_parents is None:
+        if rng is None:
+            raise ValueError("supply either init_parents or rng")
+        parents_of = random_orientation(skeleton, rng)
+    else:
+        parents_of = [set(ps) for ps in init_parents]
+
+    if sum(len(ps) for ps in parents_of) != len(edges):
+        raise ValueError("initial orientation does not match the skeleton")
+    for (u, v) in edges:
+        if (v in parents_of[u]) == (u in parents_of[v]):
+            raise ValueError(f"edge ({u},{v}) is not oriented exactly once")
+    if not _is_acyclic(parents_of):
+        raise ValueError("initial orientation is cyclic")
+
+    cache = _ScoreCache(X, node_info, dict(max_iter=fit_max_iter, ftol=fit_ftol))
+    node_score = [cache.get(i, parents_of[i]).score for i in range(d)]
+    total_score = sum(node_score)
+    history: list[dict] = []
+    reverse_steps = 0
+
+    def _try_reverse() -> bool:
+        nonlocal total_score
+        best_delta = 0.0
+        best_op = None
+        for (u, v) in edges:
+            child, parent = (u, v) if v in parents_of[u] else (v, u)
+            new_pc = parents_of[child] - {parent}
+            new_pp = parents_of[parent] | {child}
+            tmp = [set(ps) for ps in parents_of]
+            tmp[child] = new_pc
+            tmp[parent] = new_pp
+            if not _is_acyclic(tmp):
+                continue
+            sc = cache.get(child, new_pc).score
+            sp = cache.get(parent, new_pp).score
+            delta = (sc - node_score[child]) + (sp - node_score[parent])
+            if delta < best_delta - 1e-15:
+                best_delta = delta
+                best_op = (child, parent, sc, sp, new_pc, new_pp)
+        if best_op is None or best_delta > -score_tol:
+            return False
+        child, parent, sc, sp, new_pc, new_pp = best_op
+        parents_of[child] = new_pc
+        parents_of[parent] = new_pp
+        total_score += (sc - node_score[child]) + (sp - node_score[parent])
+        node_score[child] = sc
+        node_score[parent] = sp
+        history.append({"op": "reverse", "edge": (parent, child),
+                        "delta": best_delta, "total_score": total_score})
+        return True
+
+    for _ in range(max_steps):
+        if not _try_reverse():
+            break
+        reverse_steps += 1
+
+    W = np.zeros((d, d), dtype=np.float64)
+    for i in range(d):
+        if not parents_of[i]:
+            continue
+        ps = sorted(parents_of[i])
+        res = cache.get(i, parents_of[i])
+        for k, j in enumerate(ps):
+            W[i, j] = res.weights[k]
+    return OrientResult(
+        W=W,
+        parents_of=parents_of,
+        total_score=total_score,
         reverse_steps=reverse_steps,
         n_fits=cache.n_fits,
         history=history,

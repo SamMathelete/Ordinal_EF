@@ -39,7 +39,7 @@ DIST_MODES = {
     "full_mix":        {"color": "#000000", "marker": "p", "label": "Mixed (all 7)"},
 }
 
-PLOT_LOG_FLOOR = 1e-4
+PLOT_LOG_FLOOR = 2e-5
 
 def apply_plot_style():
     import matplotlib
